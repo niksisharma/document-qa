@@ -11,6 +11,12 @@ summary_type = st.selectbox(
         ["100 Words", "2 Paragraphs", "5 Bullet Points"]
     )
 
+language = st.sidebar.selectbox(
+        "Select Language",
+        ["English", "Spanish", "French", "German", "Chinese", "Kannada"]
+    )
+st.sidebar.write(f"Language selected: {language}")
+
 # Checkbox to select advanced model
 use_advanced_model = st.checkbox("Use Advanced Model (GPT-4)")
 
