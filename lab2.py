@@ -2,53 +2,64 @@ import streamlit as st
 from openai import OpenAI
 
 # Show title and description.
-st.title("📄 Nikita's Document QA Lab 2")
-st.write(
-    "Upload a document below and ask a question about it – GPT will answer! "
-    "To use this app, you need to provide an OpenAI API key, which you can get "
-    "[here](https://platform.openai.com/account/api-keys)."
-)
+st.title("📄 Nikita's Document Summarizer Lab 2")
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
 openai_api_key = st.secrets["DB_TOKEN"]
 
+summary_type = st.selectbox(
+        "Select Summary Type",
+        ["100 Words", "2 Paragraphs", "5 Bullet Points"]
+    )
+
+# Checkbox to select advanced model
+use_advanced_model = st.checkbox("Use Advanced Model (GPT-4)")
+
+# Default model selection
+model = "gpt-4" if use_advanced_model else "gpt-4.1-nano"
+
+    
 key_valid = False
-if not openai_api_key:
-    st.info("No OpenAI API key", icon="🗝️")
-else:
+if openai_api_key:
     try:
-        # Immediate validation
-        OpenAI(api_key=openai_api_key).models.list()
+        client = OpenAI(api_key=openai_api_key)
+        client.models.list()  
         st.success("API key is valid ✅")
         key_valid = True
     except Exception as e:
         st.error(f"Invalid API key. {e}")
+else:
+    st.info("No OpenAI API key", icon="🗝️")
 
-uploaded_file = st.file_uploader(
-    "Upload a document (.txt or .md)", type=("txt", "md"), disabled=not key_valid
-)
+st.write("Upload your document and select summary type.")
 
-question = st.text_area(
-    "Now ask a question about the document!",
-    placeholder="Can you give me a short summary?",
-    disabled=(not key_valid or not uploaded_file),
-)
+uploaded_file = st.file_uploader("Upload a document (.txt or .md)", type=("txt", "md"))
 
-if key_valid and uploaded_file and question:
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
-    
-    # Let the user upload a file via `st.file_uploader`.
-    document = uploaded_file.read().decode(errors="ignore")
-    messages = [
-        {"role": "user", "content": f"Here's a document: {document}\n\n---\n\n{question}"}
-    ]
+if uploaded_file:
+        document = uploaded_file.read().decode(errors="ignore")
+        st.write("Document Content:")
+        st.text_area("Document Content", document, height=200)
 
-    stream = client.chat.completions.create(
-        model="gpt-4.1-nano",
-        messages=messages,
-        stream=True,
-    )
-    st.write_stream(stream)
+    # Show the summary options and get the LLM key from secrets
+openai_api_key = st.secrets["DB_TOKEN"]
+
+if key_valid and uploaded_file and document:
+        if summary_type == "100 Words":
+            prompt = f"Summarize the document in 100 words: {document}"
+        elif summary_type == "2 Paragraphs":
+            prompt = f"Summarize the document in 2 paragraphs: {document}"
+        else:
+            prompt = f"Summarize the document in 5 bullet points: {document}"
+
+        messages = [{"role": "user", "content": prompt}]
+        
+        try:
+            stream = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                stream=True,
+            )
+            st.write_stream(stream)
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+   
