@@ -47,7 +47,7 @@ if key_valid and uploaded_file and question:
     ]
 
     stream = client.chat.completions.create(
-        model="gpt-4.1",
+        model="gpt-4.1-nano",
         messages=messages,
         stream=True,
     )
