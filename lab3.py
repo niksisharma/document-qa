@@ -21,7 +21,7 @@ for msg in st.session_state.messages:
     chat_msg.write(msg["content"])
 
 if prompt := st.chat_input("What is up?"):
-    st.session_state.messages.append({"role": "user", "content": "prompt"})
+    st.session_state.messages.append({"role": "user", "content": prompt})
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -39,3 +39,7 @@ if prompt := st.chat_input("What is up?"):
         response = st.write_stream(stream)
 
     st.session_state.messages.append({"role": "assistant", "content": response})
+
+    # Keep initial message + last 2 conversation messages  
+    if len(st.session_state.messages) > 3:  
+        st.session_state.messages = [st.session_state.messages[0]] + st.session_state.messages[-2:]                                                                          
