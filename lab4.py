@@ -11,7 +11,7 @@ sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
 import chromadb
 
 # Show title and description.
-st.title("# Nikita's Lab 4")
+st.title("# Nikita's Lab 4 - RAG Chatbot")
 
 chromadb_path = "./ChromaDB_for_lab"
 
@@ -22,6 +22,10 @@ openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 if 'openai_client' not in st.session_state:
     st.session_state.openai_client = OpenAI(api_key=openai_api_key)
+
+# Initialize chat history
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 def add_to_collection(collection, text, filename):
     """Add a document to the ChromaDB collection with OpenAI embeddings"""
@@ -55,7 +59,6 @@ def extract_text_from_pdf_file(file_obj):
 def create_lab4_vectordb():
     """Create ChromaDB collection and populate with PDF documents from local directory"""
     try:
-        # Create or get collection
         collection = chroma_client.get_or_create_collection(
             name="Lab4Collection",
             metadata={"hnsw:space": "cosine"}
@@ -63,7 +66,6 @@ def create_lab4_vectordb():
         
         st.write("📁 Loading PDF files from repository...")
         
-        # Define the path to your PDFs (adjust this path as needed)
         pdf_directory = "./pdfs"
         
         pdf_files = []
@@ -76,56 +78,45 @@ def create_lab4_vectordb():
                 pdf_path = pdf_directory
         
         if not pdf_files:
-            st.error("❌ No PDF files found in the repository. Please check the file paths.")
-            st.write("Looking for PDFs in these directories:", possible_paths)
+            st.error("No PDF files found in the repository. Please check the file paths.")
             return None
         
-        st.write(f"📂 Found {len(pdf_files)} PDF files in: `{pdf_path}`")
+        st.write(f"Found {len(pdf_files)} PDF files in: `{pdf_path}`")
         
-        # Display found files
-        st.write("Files to process:")
-        for pdf_file in pdf_files:
-            st.write(f"- {pdf_file}")
-        
-        for i, pdf_filename in enumerate(pdf_files):
+        processed_count = 0
+        for pdf_filename in pdf_files:
             pdf_file_path = os.path.join(pdf_path, pdf_filename)
-            st.write(f"Processing: {pdf_filename}")
             
             try:
-                # Read PDF file from local path
                 with open(pdf_file_path, 'rb') as file:
                     text_content = extract_text_from_pdf_file(file)
                 
                 if text_content.strip(): 
                     # Add to collection
                     add_to_collection(collection, text_content, pdf_filename)
-                    st.write(f"✅ Added {pdf_filename} to vector database")
                     processed_count += 1
-                else:
-                    st.warning(f"⚠️ No text extracted from {pdf_filename}")
                     
             except Exception as e:
-                st.error(f"❌ Error processing {pdf_filename}: {e}")
+                st.error(f"Error processing {pdf_filename}: {e}")
         
-        st.success(f"✅ Successfully processed {processed_count}/{len(pdf_files)} PDF files!")
+        st.success(f"Successfully processed {processed_count}/{len(pdf_files)} PDF files!")
         return collection
             
     except Exception as e:
         st.error(f"Error creating vector database: {e}")
         return None
 
-def test_vectordb_search(collection, search_query, top_k=3):
-    """Test the vector database with a search query"""
+def search_vectordb(collection, query, top_k=3):
+    """Search the vector database and return relevant documents"""
     if collection is None:
-        st.error("Vector database not available for testing.")
-        return
+        return []
     
     try:
         openai_client = st.session_state.openai_client
         
         # Create embedding for search query
         response = openai_client.embeddings.create(
-            input=search_query,
+            input=query,
             model="text-embedding-3-small"
         )
         query_embedding = response.data[0].embedding
@@ -136,83 +127,116 @@ def test_vectordb_search(collection, search_query, top_k=3):
             n_results=top_k
         )
         
-        st.write(f"🔍 Search Results for: **'{search_query}'**")
-        
+        # Format results
+        relevant_docs = []
         if results['ids'] and len(results['ids'][0]) > 0:
-            st.write(f"Top {top_k} most relevant documents:")
             for i, doc_id in enumerate(results['ids'][0]):
+                document = results['documents'][0][i]
                 distance = results['distances'][0][i] if 'distances' in results else 0
-                st.write(f"{i+1}. **{doc_id}** (similarity score: {1-distance:.3f})")
-        else:
-            st.write("No documents found matching the search query.")
+                similarity_score = 1 - distance
+                
+                relevant_docs.append({
+                    'filename': doc_id,
+                    'content': document,
+                    'similarity': similarity_score
+                })
+        
+        return relevant_docs
             
     except Exception as e:
         st.error(f"Error during search: {e}")
+        return []
 
-# Main application logic
-def main():
-    st.markdown("## Vector Database Setup and Testing")
+def generate_rag_response(user_query, relevant_docs):
+    """Generate response using RAG - combine retrieved documents with LLM"""
+    openai_client = st.session_state.openai_client
     
-    # Create vector database once per session
-    if 'Lab4_vectorDB' not in st.session_state:
-        st.write("🚀 Creating vector database for the first time...")
+    context_parts = []
+    source_info = []
+    
+    if relevant_docs:
+        context_parts.append("Here is relevant information from the knowledge base:")
+        for i, doc in enumerate(relevant_docs):
+            context_parts.append(f"\n--- Document {i+1}: {doc['filename']} ---")
+            context_parts.append(doc['content'][:1500])  # Limit content length
+            source_info.append(f"• {doc['filename']} (similarity: {doc['similarity']:.3f})")
+    
+    context = "\n".join(context_parts)
+    
+    system_prompt = """You are a helpful AI assistant chatbot that answers questions based on the provided documents. 
+
+IMPORTANT INSTRUCTIONS:
+1. If you use information from the provided documents, clearly state that you are using knowledge from the document(s)
+2. If the provided documents don't contain relevant information for the user's question, clearly state that you don't have that information in the knowledge base
+3. Always be clear about whether your response is based on the retrieved documents or your general knowledge
+4. Keep your responses conversational and helpful
+"""
+    
+    user_prompt = f"""User Question: {user_query}
+
+{context if context else "No relevant documents found in the knowledge base for this query."}
+
+Please provide a helpful response to the user's question."""
+
+    try:
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",  
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            max_tokens=1000
+        )
         
-        with st.spinner("Setting up ChromaDB collection..."):
+        assistant_response = response.choices[0].message.content
+        
+        # Add source information if documents were used
+        if relevant_docs and len(relevant_docs) > 0:
+            assistant_response += f"\n\n📚 **Sources consulted:**\n" + "\n".join(source_info)
+        
+        return assistant_response
+        
+    except Exception as e:
+        return f"Sorry, I encountered an error while generating a response: {e}"
+
+def main():
+    # Initialize vector database
+    if 'Lab4_vectorDB' not in st.session_state:
+        st.write("Setting up vector database...")
+        
+        with st.spinner("Loading documents into ChromaDB..."):
             collection = create_lab4_vectordb()
             if collection is not None:
                 st.session_state.Lab4_vectorDB = collection
-                st.success("✅ Vector database created and stored in session state!")
+                st.success("✅ Vector database ready!")
+                st.rerun() 
     else:
-        st.info("✅ Vector database already exists in session state.")
-        collection = st.session_state.Lab4_vectorDB
-    
-    # Testing section
-    if 'Lab4_vectorDB' in st.session_state:
-        st.markdown("## Test Vector Database")
+        st.markdown("## 💬 Chat with your Documents")
+        st.markdown("Ask questions about the documents in your knowledge base!")
         
-        # Test search options
-        search_options = ["Generative AI", "Text Mining", "Data Science Overview", "Custom Query"]
-        selected_option = st.selectbox("Choose a test search query:", search_options)
+        # Display chat messages from history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
         
-        if selected_option == "Custom Query":
-            search_query = st.text_input("Enter your custom search query:")
-        else:
-            search_query = selected_option
-        
-        # Number of results to return
-        top_k = st.slider("Number of top results to return:", 1, 10, 3)
-        
-        if st.button("🔍 Search Vector Database") and search_query:
-            test_vectordb_search(st.session_state.Lab4_vectorDB, search_query, top_k)
-    
-    # Debug information
-    with st.expander("Debug Information"):
-        st.write("Session State Keys:", list(st.session_state.keys()))
-        if 'Lab4_vectorDB' in st.session_state:
-            try:
-                collection = st.session_state.Lab4_vectorDB
-                count = collection.count()
-                st.write(f"Documents in collection: {count}")
-            except Exception as e:
-                st.write(f"Error getting collection info: {e}")
-        
-        # Show current directory and files for debugging
-        st.write("Current working directory:", os.getcwd())
-        st.write("Files in current directory:")
-        try:
-            current_files = os.listdir(".")
-            pdf_files_found = [f for f in current_files if f.lower().endswith('.pdf')]
-            st.write(f"PDF files in current directory: {pdf_files_found}")
+        # Chat input
+        if prompt := st.chat_input("Ask me anything about the documents"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
             
-            # Check common subdirectories
-            common_dirs = ['pdfs', 'documents', 'files', 'data']
-            for dir_name in common_dirs:
-                if os.path.exists(dir_name):
-                    dir_files = os.listdir(dir_name)
-                    pdf_files_in_dir = [f for f in dir_files if f.lower().endswith('.pdf')]
-                    st.write(f"PDF files in {dir_name}/: {pdf_files_in_dir}")
-        except Exception as e:
-            st.write(f"Error listing files: {e}")
+            # Generate assistant response
+            with st.chat_message("assistant"):
+                with st.spinner("Searching documents and generating response..."):
+                    relevant_docs = search_vectordb(st.session_state.Lab4_vectorDB, prompt, top_k=3)
+                    
+                    # Generate RAG response
+                    response = generate_rag_response(prompt, relevant_docs)
+                    
+                    st.markdown(response)
+            
+            st.session_state.messages.append({"role": "assistant", "content": response})
+        
 
 if __name__ == "__main__":
     main()
