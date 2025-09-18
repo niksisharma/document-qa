@@ -4,7 +4,7 @@ from openai import OpenAI
 # Show title and description.
 st.title("📄 Nikita's Document Summarizer Lab 2")
 
-openai_api_key = st.secrets["DB_TOKEN"]
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 summary_type = st.selectbox(
         "Select Summary Type",
@@ -46,7 +46,7 @@ if uploaded_file:
         st.text_area("Document Content", document, height=200)
 
     # Show the summary options and get the LLM key from secrets
-openai_api_key = st.secrets["DB_TOKEN"]
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 if key_valid and uploaded_file and document:
         if summary_type == "100 Words":

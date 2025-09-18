@@ -4,7 +4,7 @@ from openai import OpenAI
 # Show title and description.
 st.title("📄 Nikita's ChatBot Lab 3")
 
-openai_api_key = st.secrets["DB_TOKEN"]
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
 openAI_model = st.sidebar.selectbox("Which Model?",("mini","regular"))
 model = "gpt-4o" if openAI_model == "regular" else "gpt-4o-mini"
