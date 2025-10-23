@@ -3,7 +3,7 @@ from openai import OpenAI
 import json
 
 # Show title and description
-st.title("📄 AI Fact-Checker + Citation Builder")
+st.title("📄 Nikita's AI Fact-Checker + Citation Builder Lab 6")
 
 openai_api_key = st.secrets["OPENAI_API_KEY"]
 
